@@ -1,0 +1,182 @@
+---
+title: "Cycle_Case"
+author: "Rahul"
+date: '2022-06-04'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Activated required packages
+```{r}
+library(tidyverse)
+library(janitor)
+library(scales)
+library(ggplot2)
+library(lubridate)
+rm(list = ls())
+```
+
+
+## Setup the directorcy and load all the files
+```{r}
+setwd("E:/study/no/Cyclistic_Bike_Share_Membership")
+dm1 <- read.csv("202012-divvy-tripdata.csv")
+dm2 <- read.csv("202101-divvy-tripdata.csv")
+dm3 <- read.csv("202102-divvy-tripdata.csv")
+dm4 <- read.csv("202103-divvy-tripdata.csv")
+dm5 <- read.csv("202104-divvy-tripdata.csv")
+dm6 <- read.csv("202105-divvy-tripdata.csv")
+dm7 <- read.csv("202106-divvy-tripdata.csv")
+dm8 <- read.csv("202107-divvy-tripdata.csv")
+dm9 <- read.csv("202108-divvy-tripdata.csv")
+dm10 <- read.csv("202109-divvy-tripdata.csv")
+dm11 <- read.csv("202110-divvy-tripdata.csv")
+dm12 <- read.csv("202111-divvy-tripdata.csv")
+```
+
+
+## Combine all the files and remove empty rows and column
+```{r}
+bike_rides <- rbind(dm1,dm2,dm3,dm4,dm5,dm6,dm7,dm8,dm9,dm10,dm11,dm12)
+bike_rides <- janitor::remove_empty(bike_rides,which = c("rows"))
+bike_rides <- janitor::remove_empty(bike_rides,which = c("cols"))
+```
+
+## Putout date from the date-time
+```{r}
+bike_rides$Ymd <- as.Date(bike_rides$started_at)
+bike_rides$started_at <- lubridate::ymd_hms(bike_rides$started_at)
+bike_rides$ended_at <- lubridate::ymd_hms(bike_rides$ended_at)
+```
+
+* Put out number of hour from time takken by rider
+```{r}
+bike_rides$start_hour <- lubridate::hour(bike_rides$started_at)
+bike_rides$ended_hour <- lubridate::hour(bike_rides$ended_at)
+```
+
+## Calculate number of hours and minutes of ride
+```{r}
+bike_rides$Hours <- difftime(bike_rides$ended_at,bike_rides$started_at,units = c("hours"))
+bike_rides$Minutes <- difftime(bike_rides$ended_at,bike_rides$started_at,units = c("mins"))
+```
+
+## Filter the data remove the column we don't want
+```{r}
+df <- bike_rides %>% filter(Hours>0)
+
+df.null <- na.omit(df) %>% 
+ select(-ride_id,-end_station_name,-end_station_id)
+```
+
+## Creating a summary data set grouped by Weekly and Count of Rides
+```{r}
+bikerides2 <- bike_rides %>% group_by(weekly = floor_date(Ymd,"week")
+                                      ,start_hour) %>%  filter(Minutes>0) %>% 
+                summarise(
+                  Minutes= sum(Minutes),
+                  Mean = mean(Minutes),
+                  Median = median(Minutes),
+                  Max = max(Minutes),
+                  Min = min(Minutes),
+                  Count = n()
+                ) %>% ungroup()
+```
+
+## Counting hours and rides by hour
+### summarize count
+```{r}
+bikerides2$CntMA <- forecast::ma(bikerides2$Count,28)
+
+summary(bikerides2$Count)
+
+xtabs(bikerides2$Count~bikerides2$start_hour)
+
+bikerides2$Monthly <- lubridate::month(bikerides2$weekly)
+```
+
+## Plot For number of rides in a day
+```{r}
+bikerides2 %>% ggplot() + geom_col(aes(x=weekly, y=Count)) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Count of Rides per Day", 
+       subtitle = "Bases on 28 dat moving average", y = "Average rides per day")
+```
+
+## Plot for number of rides in a hour
+```{r}
+bikerides2 %>%  ggplot() + geom_col(aes(x=start_hour, y=Minutes))+
+  scale_y_continuous(labels = comma)+
+  labs(title = "Count of Rides by Hours",
+       y="Rides per Hour")
+```
+
+## Creating a summary according to membership type and bike type
+```{r}
+bikestype<- bike_rides %>% group_by(member_casual,rideable_type,weekly=floor_date(Ymd,"week")) %>% 
+  filter(Minutes>0) %>% 
+  summarise(
+    Minutes= sum(Minutes),
+    Mean = mean(Minutes),
+    Median = median(Minutes),
+    Max = max(Minutes),
+    Min = min(Minutes),
+    Count = n()
+  ) %>% ungroup()
+
+
+table(bikestype$rideable_type)
+```
+
+## Plot For different types bike count 
+```{r}
+ggplot(bikestype) +
+  geom_col(aes(x=weekly, y=Count,fill = rideable_type)) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Count of Rides by Bike type" , subtitle = "For 12 months")+
+  facet_wrap(~rideable_type)
+```
+
+## Plot for finding station with most number of bike started their ride
+```{r}
+bike_rides %>% count(start_station_name,sort = TRUE) %>% 
+  top_n(21) %>% slice(2:21) %>% 
+  ggplot()+ geom_col(aes(x=start_station_name, y=n))+
+  labs(title = "Top 20 Start station by Ride Count",
+       x = "Station Name", y="Count of Rides") +
+  scale_alpha_continuous(labels=comma)+
+  coord_flip()
+```
+
+## Plot for rides by different membership people
+```{r}
+ggplot(bikestype) +
+  geom_col(aes(x=weekly, y=Count,fill = member_casual)) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Count of Rides by Riders" , subtitle = "Member and Casual") +
+  facet_wrap(~member_casual)
+```
+
+## Plot for rides time in minutes per week
+```{r}
+ggplot(bikestype) + geom_col(aes(x=weekly, y=Minutes)) +
+  scale_y_continuous(labels = comma) +
+  facet_wrap(~rideable_type) +
+  labs(title = "Total Ride Mintutes by Week")
+```
+
+## Plot for rides time(minutes) according to bike type per week
+```{r}
+ggplot(bikestype,aes(x=weekly, y=Minutes, fill= rideable_type)) +
+  geom_col(stat = "identity",  alpha = 0.8) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Rides Mintues by bike Type and week", y= "Bike Trip in Minutes")+
+  facet_wrap(~rideable_type)
+```
+
